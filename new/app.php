@@ -75,11 +75,13 @@ try {
                         'name' => $user['NOMTREBALLADOR'] ?: $user['WEBNOMUSUARI'],
                         'company_name' => $user['NOMEMPRESA'],
                         'company' => (int) $user['CODIEMPRESA'] === 400 ? 6 : (int) $user['CODIEMPRESA'],
+                        'source_company' => (int) $user['CODIEMPRESA'],
                         'employee_company' => $user['EMPRESATREB'],
                         'employee' => $user['CODITREBALLADOR'],
                         'supervisor' => (bool) $user['IS_SUPERVISOR'],
                     ],
                 ];
+                $_SESSION['account'] = $_SESSION['worker'];
                 go('index.php');
             }
             $notice = ['text' => 'El usuario o la contraseña son incorrectos.', 'tone' => 'error'];
@@ -89,6 +91,32 @@ try {
     }
 
     $db = database();
+    if ($page === 'workers') {
+        $account = $_SESSION['account'] ?? $worker;
+        if (!$account['supervisor']) {
+            go('index.php', 'El cambio de trabajador está reservado a supervisores.', 'error');
+        }
+        $workers = companyWorkers($db, $account);
+        if ($isPost && $action === 'switch-worker') {
+            foreach ($workers as $candidate) {
+                if ((string) $candidate['CODITREBALLADOR'] !== field($_POST, 'employee')) {
+                    continue;
+                }
+                $_SESSION['account'] = $account;
+                $_SESSION['worker'] = array_replace($account, [
+                    'employee' => $candidate['CODITREBALLADOR'],
+                    'employee_company' => $candidate['EMPRESATREB'],
+                    'name' => $candidate['NOMTREBALLADOR'] ?: $account['username'],
+                ]);
+                unset($_SESSION['registrations'], $_SESSION['finished_records']);
+                go('index.php');
+            }
+            $notice = ['text' => 'Selecciona un trabajador de tu empresa.', 'tone' => 'error'];
+        }
+        renderWorkers($worker, $notice, $workers);
+        exit;
+    }
+
     if ($page === 'register') {
         $vehicle = findVehicle($db, $worker['company'], $vehicleCode);
         if (!$vehicle) {
@@ -132,6 +160,34 @@ try {
         exit;
     }
 
+    if ($page === 'delete') {
+        $account = $_SESSION['account'] ?? $worker;
+        if (!sameWorker($account, $worker)) {
+            go('index.php', 'Solo puedes eliminar registros de tu propio usuario.', 'error');
+        }
+        $record = findRecord($db, $account, $recordId);
+        if (!$record) {
+            go('index.php', 'No se ha encontrado ese registro.', 'error');
+        }
+        if ($isPost && $action === 'delete') {
+            try {
+                $deleted = deleteOwnRecord($db, $account, $recordId);
+            } catch (PDOException $error) {
+                if ((int) ($error->errorInfo[1] ?? 0) !== 1451) {
+                    throw $error;
+                }
+                go('index.php', 'No se puede eliminar ese registro porque tiene datos vinculados.', 'error');
+            }
+            if ($deleted) {
+                unset($_SESSION['finished_records'][$recordId]);
+                go('index.php', 'Registro eliminado.');
+            }
+            go('index.php', 'No se ha encontrado ese registro.', 'error');
+        }
+        renderDelete($worker, $record);
+        exit;
+    }
+
     if (in_array($page, ['record', 'done'], true)) {
         $record = findRecord($db, $worker, $recordId);
         if (!$record) {
@@ -139,6 +195,9 @@ try {
         }
         $url = recordUrl($recordId);
         $stage = recordStage($record);
+        if ($stage === 'photos' && isset($_SESSION['finished_records'][$recordId])) {
+            $stage = 'done';
+        }
         $incidentDraft = ['type' => '', 'notes' => $record['OBSERVACIONS'] ?? ''];
         $missing = [];
         $categories = $stage === 'incident' ? incidentTypes($db) : [];
@@ -155,22 +214,43 @@ try {
                         [$type, $incidentDraft['notes'], $recordId]);
                     go($url, 'Incidencia guardada.');
                 }
-                if ($stage === 'checklist' && in_array($action, ['save', 'finish'], true)) {
-                    $answers = is_array($_POST['answers'] ?? null) ? $_POST['answers'] : [];
-                    $expiry = is_array($_POST['expiry'] ?? null) ? $_POST['expiry'] : [];
-                    $missing = saveChecklist($db, $record, $answers, $expiry, field($_POST, 'comment'), $action === 'finish');
-                    if ($action === 'save') {
-                        go($url, 'Borrador guardado.');
-                    }
+                if ($stage === 'checklist' && in_array($action, ['answer', 'expiry', 'clear-expiry', 'comment', 'finish'], true)) {
+                    $missing = updateChecklist($db, $record, $action, [
+                        'question' => (int) field($_POST, 'question'),
+                        'answer' => field($_POST, 'answer'),
+                        'expiry' => field($_POST, 'expiry'),
+                        'comment' => field($_POST, 'comment'),
+                    ]);
                     if (!$missing) {
-                        go($url, 'Checklist completado.');
+                        go($url, $action === 'finish' ? 'Checklist completado.' : null);
                     }
-                    $notice = ['text' => 'Se han guardado tus cambios. Completa los campos marcados para continuar.', 'tone' => 'error'];
-                    $record['COMENTARI'] = field($_POST, 'comment');
+                    $notice = ['text' => 'Completa los campos marcados para continuar.', 'tone' => 'error'];
+                }
+                if ($stage === 'checklist' && $action === 'review-type') {
+                    $type = (int) field($_POST, 'type');
+                    if (!choiceExists(reviewTypes($db, $worker), 'IDTIPUSREVISIO', $type)) {
+                        throw new DomainException('Selecciona un tipo de revisión disponible.');
+                    }
+                    query($db, 'UPDATE VEHICLESTREBS SET IDTIPUSREVISIO = ? WHERE IDVEHICLETREB = ?
+                                AND (FINALCHECKLIST IS NULL OR FINALCHECKLIST <> -1)', [$type, $recordId]);
+                    go($url, 'Tipo de revisión guardado.');
+                }
+                if ($stage === 'checklist' && $action === 'incident-type') {
+                    $type = (int) field($_POST, 'type');
+                    if (!choiceExists(incidentTypes($db), 'IDVEHICLEINC', $type)) {
+                        throw new DomainException('Selecciona un tipo de incidencia disponible.');
+                    }
+                    query($db, 'UPDATE VEHICLESTREBS SET IDVEHICLEINC = ? WHERE IDVEHICLETREB = ?
+                                AND (FINALCHECKLIST IS NULL OR FINALCHECKLIST <> -1)', [$type, $recordId]);
+                    go($url, 'Tipo de incidencia guardado.');
                 }
                 if ($stage === 'photos' && $action === 'photo') {
                     savePhoto($db, $worker, $record, $_FILES['photo'] ?? []);
                     go($url, 'Foto guardada.');
+                }
+                if ($stage === 'photos' && $action === 'finalize') {
+                    $_SESSION['finished_records'][$recordId] = true;
+                    go('index.php?view=done&id=' . $recordId);
                 }
             } catch (DomainException $error) {
                 $notice = ['text' => $error->getMessage(), 'tone' => 'error'];
@@ -182,7 +262,8 @@ try {
         } elseif ($stage === 'incident') {
             renderIncident($worker, $notice, $record, $categories, $incidentDraft);
         } elseif ($stage === 'checklist') {
-            renderChecklist($worker, $notice, $record, checklist($db, $recordId), $missing);
+            renderChecklist($worker, $notice, $record, checklist($db, $record), $missing,
+                reviewTypes($db, $worker), incidentTypes($db));
         } else {
             renderPhotos($worker, $notice, $record);
         }
@@ -191,7 +272,8 @@ try {
 
     $search = field($_GET, 'q');
     renderDashboard($worker, $notice, recentRecords($db, $worker), recentRecords($db, $worker, true), $search,
-        $search === '' ? [] : searchVehicles($db, $worker['company'], substr($search, 0, 120)));
+        $search === '' ? [] : searchVehicles($db, $worker['company'], substr($search, 0, 120)),
+        sameWorker($_SESSION['account'] ?? $worker, $worker));
 } catch (Throwable $error) {
     error_log('webvehicles/new: ' . get_class($error) . ' (' . $error->getCode() . ')');
     http_response_code(503);

@@ -31,7 +31,14 @@ function vehicleName(array $vehicle): string
     return trim(($vehicle['MARCA'] ?? '') . ' ' . ($vehicle['MODEL'] ?? '')) ?: ($vehicle['DESCRIPCIOOBRA'] ?? 'Vehículo');
 }
 
-function layout(string $title, ?array $worker, ?array $notice = null): void
+function renderNotice(?array $notice): void
+{
+    if ($notice): ?>
+        <div class="notice <?= h($notice['tone']) ?>" role="<?= $notice['tone'] === 'error' ? 'alert' : 'status' ?>"><?= h($notice['text']) ?></div>
+    <?php endif;
+}
+
+function layout(string $title, ?array $worker, ?array $notice = null, bool $login = false): void
 {
     ?>
 <!doctype html>
@@ -42,13 +49,17 @@ function layout(string $title, ?array $worker, ?array $notice = null): void
     <title><?= h($title) ?> · OSG Vehículos</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body<?= $login ? ' class="login-page"' : '' ?>>
+<?php if (!$login): ?>
 <header class="topbar">
     <div class="topbar-inner">
-        <a class="brand" href="index.php"><span class="wordmark">OSG</span><span>Vehículos</span></a>
+        <a class="brand" href="index.php"><img src="osg.png" alt="OSG" height="30"><span>Vehículos</span></a>
         <?php if ($worker): ?>
         <div class="account">
             <div class="account-name"><strong><?= h($worker['name']) ?></strong><span><?= h($worker['company_name']) ?></span></div>
+            <?php if (!empty($worker['supervisor'])): ?>
+                <a class="button button-top" href="index.php?view=workers">Cambiar trabajador</a>
+            <?php endif; ?>
             <form method="post" action="index.php"><?php csrf(); ?>
                 <button class="button button-top" name="action" value="logout">Salir</button>
             </form>
@@ -56,11 +67,9 @@ function layout(string $title, ?array $worker, ?array $notice = null): void
         <?php endif; ?>
     </div>
 </header>
+<?php endif; ?>
 <main class="shell<?= $worker ? '' : ' shell-login' ?>" id="contenido">
-    <?php if ($notice): ?>
-        <div class="notice <?= h($notice['tone']) ?>" role="<?= $notice['tone'] === 'error' ? 'alert' : 'status' ?>"><?= h($notice['text']) ?></div>
-    <?php endif; ?>
-    <?php
+    <?php renderNotice($notice);
 }
 
 function endLayout(): void
@@ -81,27 +90,58 @@ function pageHeading(string $title, ?string $subtitle = null, bool $back = true)
 
 function renderLogin(?array $notice, string $username): void
 {
-    layout('Acceso', null, $notice);
+    layout('Acceso', null, null, true);
     ?>
     <section class="card login-card">
-        <h1>Registro de vehículos</h1>
-        <p class="muted">Accede con tu usuario de OSG.</p>
-        <form method="post" action="index.php" class="fields">
-            <?php csrf(); ?>
-            <label>Usuario
-                <input name="username" value="<?= h($username) ?>" autocomplete="username" required autofocus>
-            </label>
-            <label>Contraseña
-                <input name="password" type="password" autocomplete="current-password" required>
-            </label>
-            <button class="button" name="action" value="login">Entrar</button>
-        </form>
+        <header class="login-header"><h1>Registro de vehículos</h1></header>
+        <div class="login-content">
+            <?php renderNotice($notice); ?>
+            <form method="post" action="index.php" class="fields">
+                <?php csrf(); ?>
+                <div class="floating-field">
+                    <input id="username" name="username" value="<?= h($username) ?>" placeholder=" " autocomplete="username" required autofocus>
+                    <label for="username">Usuario</label>
+                </div>
+                <div class="floating-field">
+                    <input id="password" name="password" type="password" placeholder=" " autocomplete="current-password" required>
+                    <label for="password">Contraseña</label>
+                </div>
+                <button class="button" name="action" value="login">Entrar</button>
+            </form>
+        </div>
     </section>
     <?php
     endLayout();
 }
 
-function renderDashboard(array $worker, ?array $notice, array $recent, array $completed, string $search, array $results): void
+function renderWorkers(array $worker, ?array $notice, array $workers): void
+{
+    layout('Cambiar trabajador', $worker, $notice);
+    pageHeading('Cambiar trabajador', $worker['company_name']);
+    ?>
+    <section class="card narrow">
+        <?php if (!$workers): ?>
+            <p class="muted">No hay trabajadores disponibles.</p>
+        <?php else: ?>
+            <form method="post" action="index.php?view=workers" class="fields">
+                <?php csrf(); ?>
+                <label>Trabajador
+                    <select name="employee" required>
+                        <?php foreach ($workers as $candidate): ?>
+                            <option value="<?= h($candidate['CODITREBALLADOR']) ?>"<?= (string) $candidate['CODITREBALLADOR'] === (string) $worker['employee'] ? ' selected' : '' ?>><?= h($candidate['NOMTREBALLADOR']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <div class="actions"><button class="button" name="action" value="switch-worker">Cambiar</button></div>
+            </form>
+        <?php endif; ?>
+    </section>
+    <?php
+    endLayout();
+}
+
+function renderDashboard(array $worker, ?array $notice, array $recent, array $completed, string $search, array $results,
+                         bool $canDelete = false): void
 {
     layout('Vehículos', $worker, $notice);
     pageHeading('Vehículos', 'Registra un vehículo, completa una revisión o comunica una incidencia.', false);
@@ -122,7 +162,7 @@ function renderDashboard(array $worker, ?array $notice, array $recent, array $co
                 <?php if (!$results): ?><p class="muted">No hay vehículos que coincidan con «<?= h($search) ?>».</p><?php else: ?>
                 <ul class="vehicle-results">
                     <?php foreach ($results as $result): ?>
-                        <li><div><strong><?= h($result['MATRICULA'] ?: $result['CODIOBRA']) ?></strong><span><?= h(vehicleName($result)) ?></span></div>
+                        <li><div><strong><?= h($result['MATRICULA'] ?: $result['CODIOBRA']) ?></strong><span><?= h($result['CODIOBRA']) ?> · <?= h(vehicleName($result)) ?></span></div>
                             <a class="button button-secondary" href="<?= h(vehicleUrl($result['CODIOBRA'])) ?>">Seleccionar<span class="sr-only"> <?= h($result['MATRICULA'] ?: $result['CODIOBRA']) ?></span></a></li>
                     <?php endforeach; ?>
                 </ul>
@@ -156,27 +196,46 @@ function renderDashboard(array $worker, ?array $notice, array $recent, array $co
         <?php else: ?>
         <div class="table-scroll">
             <table>
-                <thead><tr><th scope="col">Fecha</th><th scope="col">Vehículo</th><th scope="col">Kilometraje</th><th scope="col">Tipo de revisión</th><th scope="col">Estado</th></tr></thead>
+                <thead><tr><th scope="col">Fecha</th><th scope="col">Código</th><th scope="col">Modelo</th><th scope="col">Matrícula</th><th scope="col">Kilometraje</th><th scope="col">Tipo de revisión</th><th scope="col">Incidencia</th><?php if ($canDelete): ?><th scope="col">Acciones</th><?php endif; ?></tr></thead>
                 <tbody>
-                <?php foreach ($recent as $entry): $stage = recordStage($entry); ?>
-                <tr>
-                    <td><?= h(displayDate($entry['DIA'])) ?></td>
-                    <td><strong><?= h($entry['MATRICULA'] ?: $entry['CODIOBRA']) ?></strong><span class="table-detail"><?= h(vehicleName($entry)) ?></span></td>
-                    <td><?= h($entry['QUILOMETRES']) ?> km</td>
-                    <td><?= h($entry['REVIEW_NAME'] ?? '—') ?><?php if ($entry['INCIDENT_NAME']): ?><span class="table-detail"><?= h($entry['INCIDENT_NAME']) ?></span><?php endif; ?></td>
-                    <td><?php if (in_array($stage, ['checklist', 'incident'], true)): ?>
-                        <a href="<?= h(recordUrl($entry['IDVEHICLETREB'])) ?>">Continuar</a>
-                        <?php elseif ($stage === 'photos'): ?>
-                        <a href="<?= h(recordUrl($entry['IDVEHICLETREB'])) ?>">Añadir fotos</a>
-                        <?php else: ?>
-                        <span class="muted">Completado</span>
+                <?php foreach ($recent as $entry): ?>
+                    <tr>
+                        <td><?= h(displayDate($entry['DIA'])) ?></td>
+                        <td><?= h($entry['CODIOBRA']) ?></td>
+                        <td><?= h($entry['MODEL'] ?? '—') ?></td>
+                        <td><?= h($entry['MATRICULA'] ?: '—') ?></td>
+                        <td><?= h($entry['QUILOMETRES']) ?> km</td>
+                        <td><?= h($entry['REVIEW_NAME'] ?? '—') ?></td>
+                        <td><?= h($entry['INCIDENT_NAME'] ?? '—') ?></td>
+                        <?php if ($canDelete): ?>
+                            <td><a class="delete-link" href="index.php?view=delete&amp;id=<?= (int) $entry['IDVEHICLETREB'] ?>">Eliminar<span class="sr-only"> registro del <?= h(displayDate($entry['DIA'])) ?></span></a></td>
                         <?php endif; ?>
-                    </td>
-                </tr>
+                    </tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+        <?php endif; ?>
+    </section>
+    <section class="card history" aria-labelledby="completed-title">
+        <h2 id="completed-title">Últimos checklists completados</h2>
+        <?php if (!$completed): ?>
+            <p class="muted">Aún no has completado ningún checklist.</p>
+        <?php else: ?>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th scope="col">Fecha</th><th scope="col">Código</th><th scope="col">Matrícula</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($completed as $entry): ?>
+                        <tr>
+                            <td><?= h(displayDate($entry['DIA'])) ?></td>
+                            <td><?= h($entry['CODIOBRA']) ?></td>
+                            <td><?= h($entry['MATRICULA'] ?: '—') ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         <?php endif; ?>
     </section>
     <?php
@@ -195,22 +254,36 @@ function options(array $items, string $key, $selected): void
     }
 }
 
+function vehicleSummary(array $vehicle, bool $registered = false): void
+{
+    $itv = checklistDate($vehicle['NEXT_ITV']);
+    ?>
+    <section class="card" aria-label="Datos del vehículo">
+        <h2>Datos del vehículo</h2>
+        <dl>
+            <dt>Código</dt><dd><?= h($vehicle['CODIOBRA']) ?></dd>
+            <dt>Marca</dt><dd><?= h($vehicle['MARCA'] ?? '—') ?></dd>
+            <dt>Modelo</dt><dd><?= h($vehicle['MODEL'] ?? '—') ?></dd>
+            <dt>Matrícula</dt><dd><?= h($vehicle['MATRICULA'] ?: '—') ?></dd>
+            <dt>Próxima ITV</dt><dd><?= h(displayDate($itv)) ?>
+                <?php if ($itv !== null && $itv < date('Y-m-d')): ?><span class="status warning">Caducada</span><?php endif; ?>
+            </dd>
+            <?php if ($registered): ?>
+                <dt>Tipo de revisión</dt><dd><?= h($vehicle['REVIEW_NAME'] ?? '—') ?></dd>
+                <dt>Kilometraje</dt><dd><?= h($vehicle['QUILOMETRES']) ?> km</dd>
+            <?php endif; ?>
+        </dl>
+    </section>
+    <?php
+}
+
 function renderRegistration(array $worker, ?array $notice, array $vehicle, array $types, array $draft, string $submission): void
 {
     layout('Registrar vehículo', $worker, $notice);
     pageHeading('Registrar vehículo', vehicleName($vehicle));
-    $itv = $vehicle['NEXT_ITV'];
-    $itvTime = $itv ? strtotime($itv) : false;
     ?>
     <div class="form-layout">
-        <section class="card side-card" aria-label="Datos del vehículo">
-            <strong class="plate"><?= h($vehicle['MATRICULA'] ?: $vehicle['CODIOBRA']) ?></strong>
-            <dl>
-                <dt>Código</dt><dd><?= h($vehicle['CODIOBRA']) ?></dd>
-                <dt>Próxima ITV</dt><dd><?= h(displayDate($itv)) ?>
-                <?php if ($itvTime !== false && $itvTime < strtotime('today')): ?><span class="status warning">Caducada</span><?php endif; ?></dd>
-            </dl>
-        </section>
+        <?php vehicleSummary($vehicle); ?>
         <section class="card">
             <h2>Datos de la revisión</h2>
             <form action="<?= h(vehicleUrl($vehicle['CODIOBRA'])) ?>" method="post" class="fields">
@@ -226,7 +299,10 @@ function renderRegistration(array $worker, ?array $notice, array $vehicle, array
                 <label>Observaciones <span class="muted">(opcional)</span>
                     <textarea name="notes" rows="4"><?= h($draft['notes'] ?? '') ?></textarea>
                 </label>
-                <div class="actions"><button class="button" name="action" value="create">Guardar y continuar</button></div>
+                <div class="actions">
+                    <a class="button button-secondary" href="index.php">Cancelar</a>
+                    <button class="button" name="action" value="create">Guardar y continuar</button>
+                </div>
             </form>
         </section>
     </div>
@@ -244,71 +320,116 @@ function renderIncident(array $worker, ?array $notice, array $record, array $cat
     layout('Registrar incidencia', $worker, $notice);
     pageHeading('Registrar incidencia', recordDescription($record));
     ?>
-    <section class="card narrow">
-        <form method="post" action="<?= h(recordUrl($record['IDVEHICLETREB'])) ?>" class="fields">
-            <?php csrf(); ?>
-            <label>Tipo de incidencia
-                <select name="type" required><?php options($categories, 'IDVEHICLEINC', $draft['type']); ?></select>
-            </label>
-            <label>Descripción
-                <textarea name="notes" rows="5" required><?= h($draft['notes']) ?></textarea>
-            </label>
-            <div class="actions"><button class="button" name="action" value="incident">Guardar y continuar</button></div>
-        </form>
-    </section>
+    <div class="form-layout">
+        <?php vehicleSummary($record, true); ?>
+        <section class="card">
+            <form method="post" action="<?= h(recordUrl($record['IDVEHICLETREB'])) ?>" class="fields">
+                <?php csrf(); ?>
+                <label>Tipo de incidencia
+                    <select name="type" required><?php options($categories, 'IDVEHICLEINC', $draft['type']); ?></select>
+                </label>
+                <label>Descripción
+                    <textarea name="notes" rows="5" required><?= h($draft['notes']) ?></textarea>
+                </label>
+                <div class="actions"><button class="button" name="action" value="incident">Guardar y continuar</button></div>
+            </form>
+        </section>
+    </div>
     <?php
     endLayout();
 }
 
-function renderChecklist(array $worker, ?array $notice, array $record, array $questions, array $missing): void
+function renderChecklist(array $worker, ?array $notice, array $record, array $questions, array $missing,
+                         array $reviewTypes, array $incidentTypes): void
 {
     layout('Checklist del vehículo', $worker, $notice);
     pageHeading('Checklist del vehículo', recordDescription($record));
-    if (!$questions): ?>
+    $url = h(recordUrl($record['IDVEHICLETREB']));
+    ?>
+    <section class="card review-details" aria-label="Datos de la revisión">
+        <form method="post" action="<?= $url ?>" class="fields">
+            <?php csrf(); ?>
+            <label>Tipo de revisión
+                <select name="type" required><?php options($reviewTypes, 'IDTIPUSREVISIO', $record['IDTIPUSREVISIO']); ?></select>
+            </label>
+            <div class="actions"><button class="button button-secondary" name="action" value="review-type">Guardar tipo de revisión</button></div>
+        </form>
+        <?php if ($incidentTypes): ?>
+            <form method="post" action="<?= $url ?>" class="fields">
+                <?php csrf(); ?>
+                <label>Tipo de incidencia
+                    <select name="type" required><?php options($incidentTypes, 'IDVEHICLEINC', $record['IDVEHICLEINC']); ?></select>
+                </label>
+                <div class="actions"><button class="button button-secondary" name="action" value="incident-type">Guardar tipo de incidencia</button></div>
+            </form>
+        <?php endif; ?>
+    </section>
+
+    <?php if (!$questions): ?>
         <div class="notice error" role="alert">Este registro no tiene preguntas de revisión configuradas.</div>
     <?php else: ?>
-    <section class="card">
-        <form method="post" action="<?= h(recordUrl($record['IDVEHICLETREB'])) ?>" class="fields">
-            <?php csrf(); ?>
+        <section class="card checklist-card" aria-label="Preguntas del checklist">
             <div class="question-list">
-            <?php foreach ($questions as $question):
-                $id = (int) $question['IDCHECKINGRESPOSTA'];
-                $answer = $question['RESPOSTA'] === null ? '' : (string) $question['RESPOSTA'];
-                $expiry = substr((string) $question['CADUCITAT'], 0, 10);
-                $needsDate = $question['TIPOARTICULO'] === 'M';
-                $incomplete = in_array($id, $missing, true);
-                ?>
-                <fieldset class="question<?= $incomplete ? ' question-missing' : '' ?>">
-                    <legend><?= h($question['DESCRIPCION'] ?: 'Elemento de revisión') ?></legend>
-                    <div class="question-fields">
-                        <div class="choices">
-                            <label><input type="radio" name="answers[<?= $id ?>]" value="-1" <?= $answer === '-1' ? 'checked' : '' ?>> Sí</label>
-                            <label><input type="radio" name="answers[<?= $id ?>]" value="0" <?= $answer === '0' ? 'checked' : '' ?>> No</label>
+                <?php foreach ($questions as $question):
+                    $id = (int) $question['IDCHECKINGRESPOSTA'];
+                    $expiry = checklistDate($question['CADUCITAT']);
+                    $needsDate = $question['TIPOARTICULO'] === 'M';
+                    $incomplete = in_array($id, $missing, true);
+                    ?>
+                    <fieldset class="question<?= $incomplete ? ' question-missing' : '' ?>">
+                        <legend><?= h($question['DESCRIPCION'] ?: 'Elemento de revisión') ?></legend>
+                        <div class="question-fields">
+                            <?php if ($question['RESPOSTA'] === null): ?>
+                                <form method="post" action="<?= $url ?>" class="choices">
+                                    <?php csrf(); ?>
+                                    <input type="hidden" name="action" value="answer">
+                                    <input type="hidden" name="question" value="<?= $id ?>">
+                                    <button class="button button-secondary" name="answer" value="-1">Sí</button>
+                                    <button class="button button-secondary" name="answer" value="0">No</button>
+                                </form>
+                            <?php else: ?>
+                                <span class="status"><?= (int) $question['RESPOSTA'] === 0 ? 'No' : 'Sí' ?></span>
+                            <?php endif; ?>
+                            <?php if ($needsDate): ?>
+                                <form method="post" action="<?= $url ?>" class="question-fields">
+                                    <?php csrf(); ?>
+                                    <input type="hidden" name="question" value="<?= $id ?>">
+                                    <?php if ($expiry === null): ?>
+                                        <label>Caducidad
+                                            <input type="date" name="expiry" value="<?= h(checklistDate($question['PREVIOUS_EXPIRY'])) ?>" required>
+                                        </label>
+                                        <button class="button button-secondary" name="action" value="expiry">Guardar fecha</button>
+                                    <?php else: ?>
+                                        <span>Caducidad <time datetime="<?= h($expiry) ?>"><?= h(displayDate($expiry)) ?></time></span>
+                                        <?php if ($expiry <= date('Y-m-d', strtotime('+30 days'))): ?>
+                                            <span class="status warning"><?= $expiry < date('Y-m-d') ? 'Caducada' : 'Caduca pronto' ?></span>
+                                        <?php endif; ?>
+                                        <button class="button button-secondary" name="action" value="clear-expiry">Cambiar fecha</button>
+                                    <?php endif; ?>
+                                </form>
+                            <?php endif; ?>
                         </div>
-                        <?php if ($needsDate): ?>
-                            <label>Caducidad
-                                <input type="date" name="expiry[<?= $id ?>]" value="<?= h($expiry) ?>">
-                                <?php if (validDate($expiry) && $expiry <= date('Y-m-d', strtotime('+30 days'))): ?>
-                                    <span class="status warning"><?= $expiry < date('Y-m-d') ? 'Caducada' : 'Caduca pronto' ?></span>
-                                <?php endif; ?>
-                            </label>
+                        <?php if ($incomplete): ?>
+                            <p class="field-error"><?= $question['RESPOSTA'] === null ? 'Selecciona Sí o No.' : '' ?> <?= $needsDate && $expiry === null ? 'Indica la fecha de caducidad.' : '' ?></p>
                         <?php endif; ?>
-                    </div>
-                    <?php if ($incomplete): ?><p class="field-error"><?= $answer === '' ? 'Selecciona Sí o No.' : '' ?> <?= $needsDate && !$expiry ? 'Indica la fecha de caducidad.' : '' ?></p><?php endif; ?>
-                </fieldset>
-            <?php endforeach; ?>
+                    </fieldset>
+                <?php endforeach; ?>
             </div>
-            <label>Comentario <span class="muted">(opcional)</span>
-                <textarea name="comment" rows="3"><?= h($record['COMENTARI'] ?? '') ?></textarea>
-            </label>
-            <div class="actions">
-                <button class="button button-secondary" name="action" value="save">Guardar borrador</button>
+            <?php if ((string) $record['COMENTARI'] === ''): ?>
+                <form method="post" action="<?= $url ?>" class="fields">
+                    <?php csrf(); ?>
+                    <label>Comentario <span class="muted">(opcional)</span><textarea name="comment" rows="3"></textarea></label>
+                    <div class="actions"><button class="button button-secondary" name="action" value="comment">Guardar comentario</button></div>
+                </form>
+            <?php else: ?>
+                <div><h2>Comentario</h2><p class="record-comment"><?= h($record['COMENTARI']) ?></p></div>
+            <?php endif; ?>
+            <form method="post" action="<?= $url ?>" class="actions">
+                <?php csrf(); ?>
                 <button class="button" name="action" value="finish">Completar checklist</button>
-            </div>
-        </form>
-    </section>
-    <?php
-    endif;
+            </form>
+        </section>
+    <?php endif;
     endLayout();
 }
 
@@ -317,21 +438,27 @@ function renderPhotos(array $worker, ?array $notice, array $record): void
     layout('Fotos del vehículo', $worker, $notice);
     pageHeading('Fotos del vehículo', recordDescription($record));
     ?>
-    <section class="card narrow">
-        <h2>Añadir fotos <span class="muted">(opcional)</span></h2>
-        <?php if ((int) $record['TEFOTOGRAFIES'] === -1): ?><p class="status">Este registro tiene fotos guardadas.</p><?php endif; ?>
-        <form method="post" action="<?= h(recordUrl($record['IDVEHICLETREB'])) ?>" enctype="multipart/form-data" class="fields">
-            <?php csrf(); ?>
-            <label>Seleccionar foto
-                <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" required aria-describedby="photo-help">
-                <span class="muted" id="photo-help">JPG, PNG, WebP o GIF. Hasta 10 MB por foto.</span>
-            </label>
-            <div class="actions">
-                <button class="button button-secondary" name="action" value="photo">Guardar foto</button>
-                <a class="button" href="index.php?view=done&amp;id=<?= (int) $record['IDVEHICLETREB'] ?>">Finalizar</a>
-            </div>
-        </form>
-    </section>
+    <div class="form-layout">
+        <?php vehicleSummary($record, true); ?>
+        <section class="card">
+            <h2>Añadir fotos <span class="muted">(opcional)</span></h2>
+            <?php if ((int) $record['TEFOTOGRAFIES'] === -1): ?><p class="status">Este registro tiene fotos guardadas.</p><?php endif; ?>
+            <form method="post" action="<?= h(recordUrl($record['IDVEHICLETREB'])) ?>" enctype="multipart/form-data" class="fields">
+                <?php csrf(); ?>
+                <label>Seleccionar foto
+                    <input type="file" name="photo" accept="image/*,.heic,.heif" required aria-describedby="photo-help">
+                    <span class="muted" id="photo-help">Selecciona una foto de la cámara o de la galería y pulsa Guardar foto. Hasta 10 MB.</span>
+                </label>
+                <div class="actions">
+                    <button class="button button-secondary" name="action" value="photo">Guardar foto</button>
+                </div>
+            </form>
+            <form method="post" action="<?= h(recordUrl($record['IDVEHICLETREB'])) ?>" class="actions photo-finish">
+                <?php csrf(); ?>
+                <button class="button" name="action" value="finalize">Finalizar</button>
+            </form>
+        </section>
+    </div>
     <?php
     endLayout();
 }
@@ -344,7 +471,25 @@ function renderDone(array $worker, ?array $notice, array $record): void
         <span class="confirmation-mark" aria-hidden="true">✓</span>
         <h1>Registro completado</h1>
         <p class="muted"><?= h(recordDescription($record)) ?></p>
+        <p>Gracias, <?= h($worker['name']) ?>.</p>
         <a class="button" href="index.php">Volver a vehículos</a>
+    </section>
+    <?php
+    endLayout();
+}
+
+function renderDelete(array $worker, array $record): void
+{
+    layout('Eliminar registro', $worker);
+    pageHeading('Eliminar registro', recordDescription($record));
+    ?>
+    <section class="card narrow">
+        <p>¿Quieres eliminar definitivamente el registro del <?= h(displayDate($record['DIA'])) ?>?</p>
+        <form method="post" action="index.php?view=delete&amp;id=<?= (int) $record['IDVEHICLETREB'] ?>" class="actions">
+            <?php csrf(); ?>
+            <a class="button button-secondary" href="index.php">Cancelar</a>
+            <button class="button button-danger" name="action" value="delete">Eliminar registro</button>
+        </form>
     </section>
     <?php
     endLayout();

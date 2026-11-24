@@ -2,6 +2,7 @@
 # FileName="Connection_php_mysql.htm"
 # Type="MYSQL"
 # HTTP="true"
+# TINC QUE MIRAR COM FER SERVIR 172.26.1.5:3306 DESDE AQUI..
 $hostname_LLUIS = "localhost";
 $database_LLUIS = "qce122";
 $username_LLUIS = "qce122";
