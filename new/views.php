@@ -242,7 +242,12 @@ function renderDashboard(
                                         <td><?= h($entry['MODEL'] ?? '—') ?></td>
                                         <td><?= h($entry['MATRICULA'] ?: '—') ?></td>
                                         <td><?= h($entry['QUILOMETRES']) ?> km</td>
-                                        <td><?= h($entry['REVIEW_NAME'] ?? '—') ?></td>
+                                        <td>
+                                            <?= h($entry['REVIEW_NAME'] ?? '—') ?>
+                                            <?php if (recordStage($entry) === 'checklist'): ?>
+                                                <br><a href="<?= h(recordUrl($entry['IDVEHICLETREB'])) ?>">Continuar checklist</a>
+                                            <?php endif; ?>
+                                        </td>
                                         <td><?= h($entry['INCIDENT_NAME'] ?? '—') ?></td>
                                         <?php if ($canDelete): ?>
                                             <td><a class="delete-link"
@@ -434,7 +439,10 @@ function renderChecklist(
             </section>
 
             <?php if (!$questions): ?>
-                <div class="notice error" role="alert">Este registro no tiene preguntas de revisión configuradas.</div>
+                <form method="post" action="<?= $url ?>" class="actions">
+                    <?php csrf(); ?>
+                    <button class="button" name="action" value="prepare-checklist">Preparar checklist</button>
+                </form>
             <?php else: ?>
                 <section class="card checklist-card" aria-label="Preguntas del checklist">
                     <div class="question-list">
@@ -579,13 +587,19 @@ function renderDelete(array $worker, array $record): void
             endLayout();
 }
 
-function renderUnavailable(?array $worker): void
+function renderUnavailable(?array $worker, ?string $registrationError = null): void
 {
     layout('Servicio no disponible', $worker);
     ?>
             <section class="card narrow">
-                <h1>Servicio no disponible</h1>
-                <p>El registro de vehículos no está disponible en este momento.</p>
+                <?php if ($registrationError !== null): ?>
+                    <h1>No se pudo mostrar el resultado del registro</h1>
+                    <p>Consulta los registros recientes antes de volver a guardarlo.</p>
+                    <p class="muted">Referencia del error <?= h($registrationError) ?></p>
+                <?php else: ?>
+                    <h1>Servicio no disponible</h1>
+                    <p>El registro de vehículos no está disponible en este momento.</p>
+                <?php endif; ?>
                 <a class="button button-secondary" href="index.php">Volver al inicio</a>
             </section>
             <?php

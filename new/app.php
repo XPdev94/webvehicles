@@ -218,7 +218,7 @@ try {
                     );
                     go($url, 'Incidencia guardada.');
                 }
-                if ($stage === 'checklist' && in_array($action, ['answer', 'expiry', 'clear-expiry', 'comment', 'finish'], true)) {
+                if ($stage === 'checklist' && in_array($action, ['prepare-checklist', 'answer', 'expiry', 'clear-expiry', 'comment', 'finish'], true)) {
                     $missing = updateChecklist($db, $record, $action, [
                         'question' => (int) field($_POST, 'question'),
                         'answer' => field($_POST, 'answer'),
@@ -292,7 +292,25 @@ try {
         sameWorker($_SESSION['account'] ?? $worker, $worker)
     );
 } catch (Throwable $error) {
-    error_log('webvehicles/new: ' . get_class($error) . ' (' . $error->getCode() . ')');
+    $location = basename($error->getFile()) . ':' . $error->getLine();
+    if ($error instanceof PDOException) {
+        foreach ($error->getTrace() as $frame) {
+            if (($frame['function'] ?? '') === 'query' && isset($frame['file'], $frame['line'])) {
+                $location = basename($frame['file']) . ':' . $frame['line'];
+                break;
+            }
+        }
+    }
+    $driverCode = $error instanceof PDOException ? (int) ($error->errorInfo[1] ?? 0) : 0;
+    error_log(sprintf(
+        'webvehicles/new: %s (%s) at %s%s',
+        get_class($error),
+        $error->getCode(),
+        $location,
+        $driverCode ? ' MySQL code=' . $driverCode : ''
+    ));
+    $createError = $worker && ($isPost ?? false) && ($page ?? '') === 'register' && ($action ?? '') === 'create';
+    $reference = $createError ? $location . ($driverCode ? ' / ' . $driverCode : '') : null;
     http_response_code(503);
-    renderUnavailable($worker);
+    renderUnavailable($worker, $reference);
 }

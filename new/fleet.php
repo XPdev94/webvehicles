@@ -154,7 +154,9 @@ function createRecord(PDO $db, array $worker, array $vehicle, int $type, int $mi
         $db->commit();
         return $id;
     } catch (Throwable $error) {
-        $db->rollBack();
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
         throw $error;
     }
 }
@@ -178,12 +180,16 @@ function seedChecklist(PDO $db, array $vehicle, int $id): void
     $questions = query(
         $db,
         '
-        SELECT q.IDVEHICLECHECKING, q.ORDEN, q.TIPUSCHECKING, MAX(a.CADUCITAT) AS CADUCITAT
-        FROM CHECKINGVEHICLESTIPMAQ q
-        LEFT JOIN CHECKINGVEHICLESRESPOSTES a
-          ON a.IDVEHICLECHECKING = q.IDVEHICLECHECKING AND a.IDVEHICLETREB = ?
-        WHERE q.CODIGOTIPOMAQUINA = ?
-        GROUP BY q.IDVEHICLECHECKING, q.ORDEN, q.TIPUSCHECKING',
+        SELECT m.*, p.ORDEN AS QUESTION_ORDER, p.TIPUSCHECKING AS QUESTION_TYPE, history.CADUCITAT
+        FROM CHECKINGVEHICLESTIPMAQ m
+        LEFT JOIN CHECKINGVEHICLESPREGUNTES p ON p.IDVEHICLECHECKING = m.IDVEHICLECHECKING
+        LEFT JOIN (
+            SELECT IDVEHICLECHECKING, MAX(CADUCITAT) AS CADUCITAT
+            FROM CHECKINGVEHICLESRESPOSTES
+            WHERE IDVEHICLETREB = ?
+            GROUP BY IDVEHICLECHECKING
+        ) history ON history.IDVEHICLECHECKING = m.IDVEHICLECHECKING
+        WHERE m.CODIGOTIPOMAQUINA = ?',
         [$previous, $vehicle['IDTIPUSVEHICLE']]
     )->fetchAll();
     if ((int) $vehicle['TIPUSUS'] === 999) {
@@ -192,19 +198,27 @@ function seedChecklist(PDO $db, array $vehicle, int $id): void
         $questions = array_merge($questions, $extra);
     }
 
-    $insert = $db->prepare('INSERT INTO CHECKINGVEHICLESRESPOSTES
-        (IDVEHICLETREB, ORDRE, TIPUSCHECKING, IDVEHICLECHECKING, CADUCITAT) VALUES (?, ?, ?, ?, ?)');
-    $added = [];
+    $rows = [];
     foreach ($questions as $question) {
         $questionId = $question['IDVEHICLECHECKING'];
-        if (!isset($added[$questionId])) {
-            $insert->execute([$id, $question['ORDEN'], $question['TIPUSCHECKING'], $questionId, $question['CADUCITAT']]);
-            $added[$questionId] = true;
+        if (!isset($rows[$questionId])) {
+            $order = $question['ORDEN'] ?? $question['QUESTION_ORDER'] ?? null;
+            $type = $question['TIPUSCHECKING'] ?? $question['QUESTION_TYPE'] ?? null;
+            $expiry = checklistDate($question['CADUCITAT']);
+            $rows[$questionId] = [$id, $order, $type, $questionId, $expiry];
         }
     }
-    if (!$added) {
+    if (!$rows) {
         throw new DomainException('Este vehículo no tiene preguntas de revisión configuradas.');
     }
+
+    $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?, ?, ?, ?)'));
+    query(
+        $db,
+        'INSERT INTO CHECKINGVEHICLESRESPOSTES
+         (IDVEHICLETREB, ORDRE, TIPUSCHECKING, IDVEHICLECHECKING, CADUCITAT) VALUES ' . $placeholders,
+        array_merge(...array_values($rows))
+    );
 }
 
 function checklist(PDO $db, array $record): array
@@ -216,10 +230,15 @@ function checklist(PDO $db, array $record): array
         $db,
         '
         SELECT a.IDCHECKINGRESPOSTA, a.RESPOSTA, a.CADUCITAT, q.DESCRIPCION, q.TIPOARTICULO,
-               (SELECT MAX(p.CADUCITAT) FROM CHECKINGVEHICLESRESPOSTES p
-                WHERE p.IDVEHICLETREB = ? AND p.IDVEHICLECHECKING = a.IDVEHICLECHECKING) AS PREVIOUS_EXPIRY
+               history.CADUCITAT AS PREVIOUS_EXPIRY
         FROM CHECKINGVEHICLESRESPOSTES a
         LEFT JOIN CHECKINGVEHICLESPREGUNTES q ON q.IDVEHICLECHECKING = a.IDVEHICLECHECKING
+        LEFT JOIN (
+            SELECT IDVEHICLECHECKING, MAX(CADUCITAT) AS CADUCITAT
+            FROM CHECKINGVEHICLESRESPOSTES
+            WHERE IDVEHICLETREB = ?
+            GROUP BY IDVEHICLECHECKING
+        ) history ON history.IDVEHICLECHECKING = a.IDVEHICLECHECKING
         WHERE a.IDVEHICLETREB = ?
         ORDER BY a.RESPOSTA IS NOT NULL, a.TIPUSCHECKING, a.ORDRE, a.IDCHECKINGRESPOSTA',
         [$previous, $id]
@@ -237,7 +256,16 @@ function updateChecklist(PDO $db, array $record, string $action, array $input): 
         }
 
         $missing = [];
-        if ($action === 'finish') {
+        if ($action === 'prepare-checklist') {
+            $hasQuestions = query($db, 'SELECT 1 FROM CHECKINGVEHICLESRESPOSTES WHERE IDVEHICLETREB = ? LIMIT 1', [$id])->fetchColumn();
+            if (!$hasQuestions) {
+                $vehicle = findVehicle($db, (int) $current['CODIEMPRESA'], $current['CODIOBRA']);
+                if (!$vehicle) {
+                    throw new DomainException('No se ha encontrado el vehículo de este registro.');
+                }
+                seedChecklist($db, $vehicle, $id);
+            }
+        } elseif ($action === 'finish') {
             $questions = checklist($db, $current);
             if (!$questions) {
                 throw new DomainException('Este registro no tiene preguntas de revisión configuradas.');
