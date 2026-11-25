@@ -172,16 +172,17 @@ try {
         if ($isPost && $action === 'delete') {
             try {
                 $deleted = deleteOwnRecord($db, $account, $recordId);
+                if ($deleted) {
+                    unset($_SESSION['finished_records'][$recordId]);
+                    go('index.php', 'Registro eliminado.');
+                }
             } catch (PDOException $error) {
                 if ((int) ($error->errorInfo[1] ?? 0) !== 1451) {
                     throw $error;
                 }
                 go('index.php', 'No se puede eliminar ese registro porque tiene datos vinculados.', 'error');
             }
-            if ($deleted) {
-                unset($_SESSION['finished_records'][$recordId]);
-                go('index.php', 'Registro eliminado.');
-            }
+
             go('index.php', 'No se ha encontrado ese registro.', 'error');
         }
         renderDelete($worker, $record);
@@ -210,8 +211,11 @@ try {
                     if (!choiceExists($categories, 'IDVEHICLEINC', $type) || $incidentDraft['notes'] === '') {
                         throw new DomainException('Selecciona un tipo de incidencia y describe lo ocurrido.');
                     }
-                    query($db, 'UPDATE VEHICLESTREBS SET IDVEHICLEINC = ?, OBSERVACIONS = ? WHERE IDVEHICLETREB = ?',
-                        [$type, $incidentDraft['notes'], $recordId]);
+                    query(
+                        $db,
+                        'UPDATE VEHICLESTREBS SET IDVEHICLEINC = ?, OBSERVACIONS = ? WHERE IDVEHICLETREB = ?',
+                        [$type, $incidentDraft['notes'], $recordId]
+                    );
                     go($url, 'Incidencia guardada.');
                 }
                 if ($stage === 'checklist' && in_array($action, ['answer', 'expiry', 'clear-expiry', 'comment', 'finish'], true)) {
@@ -262,8 +266,15 @@ try {
         } elseif ($stage === 'incident') {
             renderIncident($worker, $notice, $record, $categories, $incidentDraft);
         } elseif ($stage === 'checklist') {
-            renderChecklist($worker, $notice, $record, checklist($db, $record), $missing,
-                reviewTypes($db, $worker), incidentTypes($db));
+            renderChecklist(
+                $worker,
+                $notice,
+                $record,
+                checklist($db, $record),
+                $missing,
+                reviewTypes($db, $worker),
+                incidentTypes($db)
+            );
         } else {
             renderPhotos($worker, $notice, $record);
         }
@@ -271,9 +282,15 @@ try {
     }
 
     $search = field($_GET, 'q');
-    renderDashboard($worker, $notice, recentRecords($db, $worker), recentRecords($db, $worker, true), $search,
+    renderDashboard(
+        $worker,
+        $notice,
+        recentRecords($db, $worker),
+        recentRecords($db, $worker, true),
+        $search,
         $search === '' ? [] : searchVehicles($db, $worker['company'], substr($search, 0, 120)),
-        sameWorker($_SESSION['account'] ?? $worker, $worker));
+        sameWorker($_SESSION['account'] ?? $worker, $worker)
+    );
 } catch (Throwable $error) {
     error_log('webvehicles/new: ' . get_class($error) . ' (' . $error->getCode() . ')');
     http_response_code(503);
