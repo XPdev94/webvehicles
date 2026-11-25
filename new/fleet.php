@@ -23,15 +23,20 @@ function sameWorker(array $account, array $worker): bool
 
 function companyWorkers(PDO $db, array $worker): array
 {
-    return query($db, 'SELECT CODITREBALLADOR, EMPRESATREB, NOMTREBALLADOR
+    return query(
+        $db,
+        'SELECT CODITREBALLADOR, EMPRESATREB, NOMTREBALLADOR
                        FROM TREBALLADORS WHERE CODIEMPRESA = ? ORDER BY NOMTREBALLADOR',
-        [$worker['source_company'] ?? $worker['company']])->fetchAll();
+        [$worker['source_company'] ?? $worker['company']]
+    )->fetchAll();
 }
 
 function recentRecords(PDO $db, array $worker, bool $completedOnly = false): array
 {
     $filter = $completedOnly ? ' AND r.FINALCHECKLIST = -1' : '';
-    return query($db, '
+    return query(
+        $db,
+        '
         SELECT r.*, v.MARCA, v.MODEL, v.MATRICULA, v.DESCRIPCIOOBRA,
                y.DESCRIPCION AS REVIEW_NAME, i.DESCRIPCION AS INCIDENT_NAME
         FROM VEHICLESTREBS r
@@ -40,7 +45,8 @@ function recentRecords(PDO $db, array $worker, bool $completedOnly = false): arr
         LEFT JOIN CHECKINGVEHICLESTIPUSINCIDENCIA i ON i.IDVEHICLEINC = r.IDVEHICLEINC
         WHERE r.EMPRESATREB = ? AND r.CODITREB = ? AND r.CODIEMPRESA = ?'
         . $filter . ' ORDER BY r.DIA DESC, r.IDVEHICLETREB DESC LIMIT 5',
-        [$worker['employee_company'], $worker['employee'], $worker['company']])->fetchAll();
+        [$worker['employee_company'], $worker['employee'], $worker['company']]
+    )->fetchAll();
 }
 
 function searchVehicles(PDO $db, int $company, string $search): array
@@ -55,11 +61,14 @@ function searchVehicles(PDO $db, int $company, string $search): array
 
 function findVehicle(PDO $db, int $company, string $code): ?array
 {
-    $vehicle = query($db, "
+    $vehicle = query(
+        $db,
+        "
         SELECT v.*, (SELECT MAX(t.PROXIMITV) FROM ITV t
             WHERE t.CODIEMPRESA = v.CODIEMPRESA AND t.CODIOBRA = v.CODIOBRA) AS NEXT_ITV
         FROM OBRES v WHERE v.CODIEMPRESA = ? AND v.CODIOBRA = ?",
-        [$company, $code])->fetch();
+        [$company, $code]
+    )->fetch();
     return $vehicle ?: null;
 }
 
@@ -88,7 +97,9 @@ function recordStage(array $record): string
 
 function findRecord(PDO $db, array $worker, int $id): ?array
 {
-    $record = query($db, '
+    $record = query(
+        $db,
+        '
         SELECT r.*, v.MARCA, v.MODEL, v.MATRICULA, v.DESCRIPCIOOBRA,
                y.DESCRIPCION AS REVIEW_NAME, i.DESCRIPCION AS INCIDENT_NAME,
                (SELECT MAX(t.PROXIMITV) FROM ITV t
@@ -98,27 +109,41 @@ function findRecord(PDO $db, array $worker, int $id): ?array
         LEFT JOIN CHECKINGVEHICLESTIPUSREVISIO y ON y.IDTIPUSREVISIO = r.IDTIPUSREVISIO
         LEFT JOIN CHECKINGVEHICLESTIPUSINCIDENCIA i ON i.IDVEHICLEINC = r.IDVEHICLEINC
         WHERE r.IDVEHICLETREB = ? AND r.EMPRESATREB = ? AND r.CODITREB = ? AND r.CODIEMPRESA = ?',
-        [$id, $worker['employee_company'], $worker['employee'], $worker['company']])->fetch();
+        [$id, $worker['employee_company'], $worker['employee'], $worker['company']]
+    )->fetch();
     return $record ?: null;
 }
 
 function deleteOwnRecord(PDO $db, array $account, int $id): bool
 {
-    return query($db, 'DELETE FROM VEHICLESTREBS
+    return query(
+        $db,
+        'DELETE FROM VEHICLESTREBS
                        WHERE IDVEHICLETREB = ? AND EMPRESATREB = ? AND CODITREB = ? AND CODIEMPRESA = ?',
-        [$id, $account['employee_company'], $account['employee'], $account['company']])->rowCount() === 1;
+        [$id, $account['employee_company'], $account['employee'], $account['company']]
+    )->rowCount() === 1;
 }
 
 function createRecord(PDO $db, array $worker, array $vehicle, int $type, int $mileage, string $notes): int
 {
     $db->beginTransaction();
     try {
-        query($db, '
+        query(
+            $db,
+            '
             INSERT INTO VEHICLESTREBS (EMPRESATREB, CODITREB, CODIOBRA, CODIEMPRESA, OBSERVACIONS,
                                        IDTIPUSREVISIO, QUILOMETRES)
             VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [$worker['employee_company'], $worker['employee'], $vehicle['CODIOBRA'], $worker['company'],
-             $notes === '' ? null : $notes, $type, $mileage]);
+            [
+                $worker['employee_company'],
+                $worker['employee'],
+                $vehicle['CODIOBRA'],
+                $worker['company'],
+                $notes === '' ? null : $notes,
+                $type,
+                $mileage
+            ]
+        );
         $id = (int) $db->lastInsertId();
         if ($id < 1) {
             throw new RuntimeException('No fleet record ID returned.');
@@ -136,25 +161,31 @@ function createRecord(PDO $db, array $worker, array $vehicle, int $type, int $mi
 
 function previousChecklistId(PDO $db, array $vehicle, int $id): int
 {
-    return (int) query($db, '
+    return (int) query(
+        $db,
+        '
         SELECT MAX(r.IDVEHICLETREB) FROM VEHICLESTREBS r
         WHERE r.CODIEMPRESA = ? AND r.CODIOBRA = ? AND r.IDVEHICLETREB < ?
           AND r.FINALCHECKLIST = -1
           AND EXISTS (SELECT 1 FROM CHECKINGVEHICLESRESPOSTES a WHERE a.IDVEHICLETREB = r.IDVEHICLETREB)',
-        [$vehicle['CODIEMPRESA'], $vehicle['CODIOBRA'], $id])->fetchColumn();
+        [$vehicle['CODIEMPRESA'], $vehicle['CODIOBRA'], $id]
+    )->fetchColumn();
 }
 
 function seedChecklist(PDO $db, array $vehicle, int $id): void
 {
     $previous = previousChecklistId($db, $vehicle, $id);
-    $questions = query($db, '
+    $questions = query(
+        $db,
+        '
         SELECT q.IDVEHICLECHECKING, q.ORDEN, q.TIPUSCHECKING, MAX(a.CADUCITAT) AS CADUCITAT
         FROM CHECKINGVEHICLESTIPMAQ q
         LEFT JOIN CHECKINGVEHICLESRESPOSTES a
           ON a.IDVEHICLECHECKING = q.IDVEHICLECHECKING AND a.IDVEHICLETREB = ?
         WHERE q.CODIGOTIPOMAQUINA = ?
         GROUP BY q.IDVEHICLECHECKING, q.ORDEN, q.TIPUSCHECKING',
-        [$previous, $vehicle['IDTIPUSVEHICLE']])->fetchAll();
+        [$previous, $vehicle['IDTIPUSVEHICLE']]
+    )->fetchAll();
     if ((int) $vehicle['TIPUSUS'] === 999) {
         $extra = query($db, 'SELECT IDVEHICLECHECKING, ORDEN, TIPUSCHECKING, NULL AS CADUCITAT
                             FROM CHECKINGVEHICLESPREGUNTES WHERE TIPUSCHECKING = 2')->fetchAll();
@@ -181,7 +212,9 @@ function checklist(PDO $db, array $record): array
     $id = (int) $record['IDVEHICLETREB'];
     $previous = previousChecklistId($db, $record, $id);
 
-    return query($db, '
+    return query(
+        $db,
+        '
         SELECT a.IDCHECKINGRESPOSTA, a.RESPOSTA, a.CADUCITAT, q.DESCRIPCION, q.TIPOARTICULO,
                (SELECT MAX(p.CADUCITAT) FROM CHECKINGVEHICLESRESPOSTES p
                 WHERE p.IDVEHICLETREB = ? AND p.IDVEHICLECHECKING = a.IDVEHICLECHECKING) AS PREVIOUS_EXPIRY
@@ -189,7 +222,8 @@ function checklist(PDO $db, array $record): array
         LEFT JOIN CHECKINGVEHICLESPREGUNTES q ON q.IDVEHICLECHECKING = a.IDVEHICLECHECKING
         WHERE a.IDVEHICLETREB = ?
         ORDER BY a.RESPOSTA IS NOT NULL, a.TIPUSCHECKING, a.ORDRE, a.IDCHECKINGRESPOSTA',
-        [$previous, $id])->fetchAll();
+        [$previous, $id]
+    )->fetchAll();
 }
 
 function updateChecklist(PDO $db, array $record, string $action, array $input): array
@@ -233,9 +267,12 @@ function updateChecklist(PDO $db, array $record, string $action, array $input): 
                 if (!in_array($input['answer'], ['-1', '0'], true)) {
                     throw new DomainException('Selecciona Sí o No.');
                 }
-                query($db, 'UPDATE CHECKINGVEHICLESRESPOSTES SET RESPOSTA = ?
+                query(
+                    $db,
+                    'UPDATE CHECKINGVEHICLESRESPOSTES SET RESPOSTA = ?
                             WHERE IDCHECKINGRESPOSTA = ? AND IDVEHICLETREB = ? AND RESPOSTA IS NULL',
-                    [(int) $input['answer'], $input['question'], $id]);
+                    [(int) $input['answer'], $input['question'], $id]
+                );
             } else {
                 if ($question['TIPOARTICULO'] !== 'M') {
                     throw new DomainException('Esta pregunta no tiene fecha de caducidad.');
@@ -279,10 +316,17 @@ function savePhoto(PDO $db, array $worker, array $record, array $upload): void
     $temp = $upload['tmp_name'] ?? '';
     $info = is_uploaded_file($temp) ? @getimagesize($temp) : false;
     $extensions = [
-        'image/jpeg' => 'JPG', 'image/png' => 'PNG', 'image/webp' => 'WEBP',
-        'image/gif' => 'GIF', 'image/bmp' => 'BMP', 'image/tiff' => 'TIFF',
-        'image/avif' => 'AVIF', 'image/heic' => 'HEIC', 'image/heif' => 'HEIF',
-        'image/heic-sequence' => 'HEIC', 'image/heif-sequence' => 'HEIF',
+        'image/jpeg' => 'JPG',
+        'image/png' => 'PNG',
+        'image/webp' => 'WEBP',
+        'image/gif' => 'GIF',
+        'image/bmp' => 'BMP',
+        'image/tiff' => 'TIFF',
+        'image/avif' => 'AVIF',
+        'image/heic' => 'HEIC',
+        'image/heif' => 'HEIF',
+        'image/heic-sequence' => 'HEIC',
+        'image/heif-sequence' => 'HEIF',
     ];
     $mime = $info['mime'] ?? null;
     if ($mime === null && is_uploaded_file($temp) && class_exists(finfo::class)) {
@@ -300,8 +344,11 @@ function savePhoto(PDO $db, array $worker, array $record, array $upload): void
     $stored = false;
     $db->beginTransaction();
     try {
-        $current = query($db, 'SELECT * FROM VEHICLESTREBS WHERE IDVEHICLETREB = ? FOR UPDATE',
-            [$record['IDVEHICLETREB']])->fetch();
+        $current = query(
+            $db,
+            'SELECT * FROM VEHICLESTREBS WHERE IDVEHICLETREB = ? FOR UPDATE',
+            [$record['IDVEHICLETREB']]
+        )->fetch();
         if (!$current || recordStage($current) !== 'photos') {
             throw new DomainException('El registro ya no admite fotos.');
         }

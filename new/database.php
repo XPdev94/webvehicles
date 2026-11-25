@@ -44,9 +44,11 @@ function legacyDatabaseSettings(): array
         }
         $name = substr($token[1], 1);
         $value = $tokens[$index + 2] ?? null;
-        if (!in_array($name, $names, true) || ($tokens[$index + 1] ?? null) !== '='
+        if (
+            !in_array($name, $names, true) || ($tokens[$index + 1] ?? null) !== '='
             || !is_array($value) || $value[0] !== T_CONSTANT_ENCAPSED_STRING
-            || ($tokens[$index + 3] ?? null) !== ';') {
+            || ($tokens[$index + 3] ?? null) !== ';'
+        ) {
             continue;
         }
         $literal = $value[1];
