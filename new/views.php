@@ -435,9 +435,30 @@ function checklistQuestionGroups(array $questions): array
     // Ignore punctuation and spacing in stored labels, including interleaved language separators.
     $normalize = static function (string $label): string {
         $label = strtr($label, [
-            'à' => 'a', 'À' => 'a', 'á' => 'a', 'Á' => 'a', 'è' => 'e', 'È' => 'e', 'é' => 'e', 'É' => 'e',
-            'í' => 'i', 'Í' => 'i', 'ï' => 'i', 'Ï' => 'i', 'ò' => 'o', 'Ò' => 'o', 'ó' => 'o', 'Ó' => 'o',
-            'ú' => 'u', 'Ú' => 'u', 'ü' => 'u', 'Ü' => 'u', 'ç' => 'c', 'Ç' => 'c', 'ñ' => 'n', 'Ñ' => 'n',
+            'à' => 'a',
+            'À' => 'a',
+            'á' => 'a',
+            'Á' => 'a',
+            'è' => 'e',
+            'È' => 'e',
+            'é' => 'e',
+            'É' => 'e',
+            'í' => 'i',
+            'Í' => 'i',
+            'ï' => 'i',
+            'Ï' => 'i',
+            'ò' => 'o',
+            'Ò' => 'o',
+            'ó' => 'o',
+            'Ó' => 'o',
+            'ú' => 'u',
+            'Ú' => 'u',
+            'ü' => 'u',
+            'Ü' => 'u',
+            'ç' => 'c',
+            'Ç' => 'c',
+            'ñ' => 'n',
+            'Ñ' => 'n',
         ]);
         return preg_replace('/[^a-z0-9]/', '', strtolower($label));
     };
@@ -487,7 +508,8 @@ function renderChecklist(
                             <select name="type"
                                 required><?php options($reviewTypes, 'IDTIPUSREVISIO', $record['IDTIPUSREVISIO']); ?></select>
                         </label>
-                        <div class="actions"><button class="button button-secondary" name="action" value="review-type">Guardar
+                        <div class="actions"><button class="button button-secondary" name="action"
+                                value="review-type">Guardar
                                 tipo de revisión</button></div>
                     </form>
                     <?php if ($incidentTypes): ?>
@@ -497,7 +519,8 @@ function renderChecklist(
                                 <select name="type"
                                     required><?php options($incidentTypes, 'IDVEHICLEINC', $record['IDVEHICLEINC']); ?></select>
                             </label>
-                            <div class="actions"><button class="button button-secondary" name="action" value="incident-type">Guardar
+                            <div class="actions"><button class="button button-secondary" name="action"
+                                    value="incident-type">Guardar
                                     tipo de incidencia</button></div>
                         </form>
                     <?php endif; ?>
@@ -526,13 +549,14 @@ function renderChecklist(
                                     $answer = $question['RESPOSTA'] === null ? null : (int) $question['RESPOSTA'];
                                     ?>
                                     <div id="question-<?= $id ?>" class="question<?= $incomplete ? ' question-missing' : '' ?>"
-                                         role="group" aria-labelledby="question-label-<?= $id ?>">
+                                        role="group" aria-labelledby="question-label-<?= $id ?>">
                                         <span class="question-label" id="question-label-<?= $id ?>">
                                             <?php if ($catalan !== ''): ?>
                                                 <?= h($catalan) ?>
                                                 <span class="question-translation" lang="es"><?= h($spanish) ?></span>
                                             <?php else: ?>
-                                                <span lang="<?= $description === '' ? 'ca' : '' ?>"><?= h($description !== '' ? $description : 'Element de revisió') ?></span>
+                                                <span
+                                                    lang="<?= $description === '' ? 'ca' : '' ?>"><?= h($description !== '' ? $description : 'Element de revisió') ?></span>
                                             <?php endif; ?>
                                         </span>
                                         <form method="post" action="<?= $url ?>" class="choices">
@@ -540,9 +564,11 @@ function renderChecklist(
                                             <input type="hidden" name="action" value="answer">
                                             <input type="hidden" name="question" value="<?= $id ?>">
                                             <button class="button button-secondary" name="answer" value="-1"
-                                                    aria-pressed="<?= $answer !== null && $answer !== 0 ? 'true' : 'false' ?>"><span aria-hidden="true">✓</span> Sí</button>
+                                                aria-pressed="<?= $answer !== null && $answer !== 0 ? 'true' : 'false' ?>"><span
+                                                    aria-hidden="true">✓</span> Sí</button>
                                             <button class="button button-secondary" name="answer" value="0"
-                                                    aria-pressed="<?= $answer === 0 ? 'true' : 'false' ?>"><span aria-hidden="true">×</span> No</button>
+                                                aria-pressed="<?= $answer === 0 ? 'true' : 'false' ?>"><span aria-hidden="true">×</span>
+                                                No</button>
                                         </form>
                                         <?php if ($needsDate): ?>
                                             <form method="post" action="<?= $url ?>" class="question-fields">
@@ -563,7 +589,8 @@ function renderChecklist(
                                                             · <?= $expiryStatus === 'expired' ? 'Caducat' : 'Caduca aviat' ?>
                                                         <?php endif; ?>
                                                     </span>
-                                                    <button class="button question-date-change" name="action" value="clear-expiry">Canviar la data</button>
+                                                    <button class="button question-date-change" name="action" value="clear-expiry">Canviar la
+                                                        data</button>
                                                 <?php endif; ?>
                                             </form>
                                         <?php endif; ?>
@@ -581,7 +608,8 @@ function renderChecklist(
                                 <?php csrf(); ?>
                                 <label>Comentari <span class="muted">(opcional)</span><textarea name="comment"
                                         rows="3"></textarea></label>
-                                <div class="actions"><button class="button button-secondary" name="action" value="comment">Desar el comentari</button></div>
+                                <div class="actions"><button class="button button-secondary" name="action" value="comment">Desar el
+                                        comentari</button></div>
                             </form>
                         <?php else: ?>
                             <div>
