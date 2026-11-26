@@ -240,7 +240,7 @@ function checklist(PDO $db, array $record): array
             GROUP BY IDVEHICLECHECKING
         ) history ON history.IDVEHICLECHECKING = a.IDVEHICLECHECKING
         WHERE a.IDVEHICLETREB = ?
-        ORDER BY a.RESPOSTA IS NOT NULL, a.TIPUSCHECKING, a.ORDRE, a.IDCHECKINGRESPOSTA',
+        ORDER BY a.TIPUSCHECKING, a.ORDRE, a.IDCHECKINGRESPOSTA',
         [$previous, $id]
     )->fetchAll();
 }
@@ -298,7 +298,7 @@ function updateChecklist(PDO $db, array $record, string $action, array $input): 
                 query(
                     $db,
                     'UPDATE CHECKINGVEHICLESRESPOSTES SET RESPOSTA = ?
-                            WHERE IDCHECKINGRESPOSTA = ? AND IDVEHICLETREB = ? AND RESPOSTA IS NULL',
+                            WHERE IDCHECKINGRESPOSTA = ? AND IDVEHICLETREB = ?',
                     [(int) $input['answer'], $input['question'], $id]
                 );
             } else {

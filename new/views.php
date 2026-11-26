@@ -402,6 +402,70 @@ function renderIncident(array $worker, ?array $notice, array $record, array $cat
             endLayout();
 }
 
+function checklistQuestionGroups(array $questions): array
+{
+    $labels = [
+        'Motor i líquids' => [
+            ['Nivell d’oli', 'Nivel de aceite', 'Nivel de aceite del motor', 'Nivell oli'],
+            ['Nivell d’aigua del radiador', 'Nivel de agua del radiador', 'Nivel del agua del radiador', 'Nivel de refrigerante'],
+            ['Nivell líquid netejaparabrises', 'Nivel líquido limpiaparabrisas', 'Nivel de líquido limpiaparabrisas', 'Nivel líquido parabrisas', 'Nivell líquid neteja parabrises'],
+            ['Estat de les escombretes', 'Estado de las escobillas', 'Estado escobillas parabrisas', 'Estado de las escobillas del limpiaparabrisas'],
+        ],
+        'Pneumàtics' => [
+            ['Pressió de les rodes', 'Presión de las ruedas', 'Presión de los neumáticos'],
+            ['Estat dels pneumàtics', 'Estado de los neumáticos', 'Estado neumáticos'],
+        ],
+        'Seguretat i equipament' => [
+            ['Kit antipunxades / Roda de recanvi', 'Kit antipinchazos / Rueda de repuesto', 'Kit antipunxades', 'Roda de recanvi', 'Kit antipinchazos', 'Rueda de repuesto'],
+            ['Estat dels frens', 'Estado de los frenos', 'Estado frenos'],
+            ['Funcionament de les llums', 'Funcionamiento de las luces', 'Funcionamiento luces'],
+            ['Hi ha triangles', 'Hay triángulos', 'Triángulos'],
+            ['Hi ha armilla reflectant', 'Hay chaleco reflectante', 'Chaleco reflectante'],
+            ['Hi ha extintor (2 kg)', 'Hay extintor (2 kg)', 'Extintor (2 kg)', 'Extintor 2 kg'],
+        ],
+        'Neteja' => [
+            ['Cotxe net', 'Coche limpio', 'Vehicle net', 'Vehículo limpio'],
+        ],
+        'Farmaciola' => [
+            ['Aigua oxigenada 250 ml', 'Agua oxigenada 250 ml'],
+            ['Alcohol 250 ml', 'Alcohol 250 ml'],
+        ],
+    ];
+
+    // Ignore punctuation and spacing in stored labels, including interleaved language separators.
+    $normalize = static function (string $label): string {
+        $label = strtr($label, [
+            'à' => 'a', 'À' => 'a', 'á' => 'a', 'Á' => 'a', 'è' => 'e', 'È' => 'e', 'é' => 'e', 'É' => 'e',
+            'í' => 'i', 'Í' => 'i', 'ï' => 'i', 'Ï' => 'i', 'ò' => 'o', 'Ò' => 'o', 'ó' => 'o', 'Ó' => 'o',
+            'ú' => 'u', 'Ú' => 'u', 'ü' => 'u', 'Ü' => 'u', 'ç' => 'c', 'Ç' => 'c', 'ñ' => 'n', 'Ñ' => 'n',
+        ]);
+        return preg_replace('/[^a-z0-9]/', '', strtolower($label));
+    };
+
+    $groups = array_fill_keys(array_keys($labels), []);
+    $groups['Altres elements'] = [];
+    $lookup = [];
+    foreach ($labels as $category => $items) {
+        foreach ($items as $names) {
+            [$catalan, $spanish] = $names;
+            $display = [$category, $catalan, $spanish];
+            foreach ($names as $name) {
+                foreach ([$name, $catalan . $name, $name . $catalan, $spanish . $name, $name . $spanish] as $variant) {
+                    $lookup[$normalize($variant)] = $display;
+                }
+            }
+        }
+    }
+
+    foreach ($questions as $question) {
+        $description = trim((string) $question['DESCRIPCION']);
+        [$category, $catalan, $spanish] = $lookup[$normalize($description)] ?? ['Altres elements', '', ''];
+        $groups[$category][] = [$question, $catalan, $spanish, $description];
+    }
+
+    return array_filter($groups);
+}
+
 function renderChecklist(
     array $worker,
     ?array $notice,
@@ -412,111 +476,127 @@ function renderChecklist(
     array $incidentTypes
 ): void {
     layout('Checklist del vehículo', $worker, $notice);
-    pageHeading('Checklist del vehículo', recordDescription($record));
     $url = h(recordUrl($record['IDVEHICLETREB']));
     ?>
-            <section class="card review-details" aria-label="Datos de la revisión">
-                <form method="post" action="<?= $url ?>" class="fields">
-                    <?php csrf(); ?>
-                    <label>Tipo de revisión
-                        <select name="type"
-                            required><?php options($reviewTypes, 'IDTIPUSREVISIO', $record['IDTIPUSREVISIO']); ?></select>
-                    </label>
-                    <div class="actions"><button class="button button-secondary" name="action" value="review-type">Guardar
-                            tipo de revisión</button></div>
-                </form>
-                <?php if ($incidentTypes): ?>
+            <div class="checklist-page">
+                <?php pageHeading('Checklist del vehículo', recordDescription($record)); ?>
+                <section class="card review-details" aria-label="Datos de la revisión">
                     <form method="post" action="<?= $url ?>" class="fields">
                         <?php csrf(); ?>
-                        <label>Tipo de incidencia
+                        <label>Tipo de revisión
                             <select name="type"
-                                required><?php options($incidentTypes, 'IDVEHICLEINC', $record['IDVEHICLEINC']); ?></select>
+                                required><?php options($reviewTypes, 'IDTIPUSREVISIO', $record['IDTIPUSREVISIO']); ?></select>
                         </label>
-                        <div class="actions"><button class="button button-secondary" name="action" value="incident-type">Guardar
-                                tipo de incidencia</button></div>
+                        <div class="actions"><button class="button button-secondary" name="action" value="review-type">Guardar
+                                tipo de revisión</button></div>
                     </form>
-                <?php endif; ?>
-            </section>
+                    <?php if ($incidentTypes): ?>
+                        <form method="post" action="<?= $url ?>" class="fields">
+                            <?php csrf(); ?>
+                            <label>Tipo de incidencia
+                                <select name="type"
+                                    required><?php options($incidentTypes, 'IDVEHICLEINC', $record['IDVEHICLEINC']); ?></select>
+                            </label>
+                            <div class="actions"><button class="button button-secondary" name="action" value="incident-type">Guardar
+                                    tipo de incidencia</button></div>
+                        </form>
+                    <?php endif; ?>
+                </section>
 
-            <?php if (!$questions): ?>
-                <form method="post" action="<?= $url ?>" class="actions">
-                    <?php csrf(); ?>
-                    <button class="button" name="action" value="prepare-checklist">Preparar checklist</button>
-                </form>
-            <?php else: ?>
-                <section class="card checklist-card" aria-label="Preguntas del checklist">
-                    <div class="question-list">
-                        <?php foreach ($questions as $question):
-                            $id = (int) $question['IDCHECKINGRESPOSTA'];
-                            $expiry = checklistDate($question['CADUCITAT']);
-                            $needsDate = $question['TIPOARTICULO'] === 'M';
-                            $incomplete = in_array($id, $missing, true);
-                            ?>
-                            <fieldset class="question<?= $incomplete ? ' question-missing' : '' ?>">
-                                <legend><?= h($question['DESCRIPCION'] ?: 'Elemento de revisión') ?></legend>
-                                <div class="question-fields">
-                                    <?php if ($question['RESPOSTA'] === null): ?>
+                <?php if (!$questions): ?>
+                    <form method="post" action="<?= $url ?>" class="actions">
+                        <?php csrf(); ?>
+                        <button class="button" name="action" value="prepare-checklist">Preparar checklist</button>
+                    </form>
+                <?php else: ?>
+                    <?php
+                    $today = date('Y-m-d');
+                    $expiryLimit = date('Y-m-d', strtotime('+30 days'));
+                    ?>
+                    <section class="card checklist-card" lang="ca" aria-label="Preguntes del checklist">
+                        <?php foreach (checklistQuestionGroups($questions) as $category => $items): ?>
+                            <div class="question-group">
+                                <h2 class="question-group-heading"><?= h($category) ?></h2>
+                                <?php foreach ($items as [$question, $catalan, $spanish, $description]):
+                                    $id = (int) $question['IDCHECKINGRESPOSTA'];
+                                    $expiry = checklistDate($question['CADUCITAT']);
+                                    $expiryStatus = $expiry === null ? '' : ($expiry < $today ? 'expired' : ($expiry <= $expiryLimit ? 'warning' : ''));
+                                    $needsDate = $question['TIPOARTICULO'] === 'M';
+                                    $incomplete = in_array($id, $missing, true);
+                                    $answer = $question['RESPOSTA'] === null ? null : (int) $question['RESPOSTA'];
+                                    ?>
+                                    <div id="question-<?= $id ?>" class="question<?= $incomplete ? ' question-missing' : '' ?>"
+                                         role="group" aria-labelledby="question-label-<?= $id ?>">
+                                        <span class="question-label" id="question-label-<?= $id ?>">
+                                            <?php if ($catalan !== ''): ?>
+                                                <?= h($catalan) ?>
+                                                <span class="question-translation" lang="es"><?= h($spanish) ?></span>
+                                            <?php else: ?>
+                                                <span lang="<?= $description === '' ? 'ca' : '' ?>"><?= h($description !== '' ? $description : 'Element de revisió') ?></span>
+                                            <?php endif; ?>
+                                        </span>
                                         <form method="post" action="<?= $url ?>" class="choices">
                                             <?php csrf(); ?>
                                             <input type="hidden" name="action" value="answer">
                                             <input type="hidden" name="question" value="<?= $id ?>">
-                                            <button class="button button-secondary" name="answer" value="-1">Sí</button>
-                                            <button class="button button-secondary" name="answer" value="0">No</button>
+                                            <button class="button button-secondary" name="answer" value="-1"
+                                                    aria-pressed="<?= $answer !== null && $answer !== 0 ? 'true' : 'false' ?>"><span aria-hidden="true">✓</span> Sí</button>
+                                            <button class="button button-secondary" name="answer" value="0"
+                                                    aria-pressed="<?= $answer === 0 ? 'true' : 'false' ?>"><span aria-hidden="true">×</span> No</button>
                                         </form>
-                                    <?php else: ?>
-                                        <span class="status"><?= (int) $question['RESPOSTA'] === 0 ? 'No' : 'Sí' ?></span>
-                                    <?php endif; ?>
-                                    <?php if ($needsDate): ?>
-                                        <form method="post" action="<?= $url ?>" class="question-fields">
-                                            <?php csrf(); ?>
-                                            <input type="hidden" name="question" value="<?= $id ?>">
-                                            <?php if ($expiry === null): ?>
-                                                <label>Caducidad
-                                                    <input type="date" name="expiry"
-                                                        value="<?= h(checklistDate($question['PREVIOUS_EXPIRY'])) ?>" required>
-                                                </label>
-                                                <button class="button button-secondary" name="action" value="expiry">Guardar fecha</button>
-                                            <?php else: ?>
-                                                <span>Caducidad <time
-                                                        datetime="<?= h($expiry) ?>"><?= h(displayDate($expiry)) ?></time></span>
-                                                <?php if ($expiry <= date('Y-m-d', strtotime('+30 days'))): ?>
-                                                    <span
-                                                        class="status warning"><?= $expiry < date('Y-m-d') ? 'Caducada' : 'Caduca pronto' ?></span>
+                                        <?php if ($needsDate): ?>
+                                            <form method="post" action="<?= $url ?>" class="question-fields">
+                                                <?php csrf(); ?>
+                                                <input type="hidden" name="question" value="<?= $id ?>">
+                                                <?php if ($expiry === null): ?>
+                                                    <label>
+                                                        <span class="sr-only">Data de caducitat</span>
+                                                        <input type="date" name="expiry"
+                                                            value="<?= h(checklistDate($question['PREVIOUS_EXPIRY'])) ?>" required>
+                                                    </label>
+                                                    <button class="button button-secondary" name="action" value="expiry">Desar la data</button>
+                                                <?php else: ?>
+                                                    <span class="question-expiry<?= $expiryStatus !== '' ? ' status ' . $expiryStatus : '' ?>">
+                                                        <span class="sr-only">Caducitat</span>
+                                                        <time datetime="<?= h($expiry) ?>"><?= h(displayDate($expiry)) ?></time>
+                                                        <?php if ($expiryStatus !== ''): ?>
+                                                            · <?= $expiryStatus === 'expired' ? 'Caducat' : 'Caduca aviat' ?>
+                                                        <?php endif; ?>
+                                                    </span>
+                                                    <button class="button question-date-change" name="action" value="clear-expiry">Canviar la data</button>
                                                 <?php endif; ?>
-                                                <button class="button button-secondary" name="action" value="clear-expiry">Cambiar
-                                                    fecha</button>
-                                            <?php endif; ?>
-                                        </form>
-                                    <?php endif; ?>
-                                </div>
-                                <?php if ($incomplete): ?>
-                                    <p class="field-error"><?= $question['RESPOSTA'] === null ? 'Selecciona Sí o No.' : '' ?>
-                                        <?= $needsDate && $expiry === null ? 'Indica la fecha de caducidad.' : '' ?>
-                                    </p>
-                                <?php endif; ?>
-                            </fieldset>
+                                            </form>
+                                        <?php endif; ?>
+                                        <?php if ($incomplete): ?>
+                                            <p class="field-error"><?= $answer === null ? 'Selecciona Sí o No.' : '' ?>
+                                                <?= $needsDate && $expiry === null ? 'Indica la data de caducitat.' : '' ?>
+                                            </p>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
                         <?php endforeach; ?>
-                    </div>
-                    <?php if ((string) $record['COMENTARI'] === ''): ?>
-                        <form method="post" action="<?= $url ?>" class="fields">
+                        <?php if ((string) $record['COMENTARI'] === ''): ?>
+                            <form method="post" action="<?= $url ?>" class="fields">
+                                <?php csrf(); ?>
+                                <label>Comentari <span class="muted">(opcional)</span><textarea name="comment"
+                                        rows="3"></textarea></label>
+                                <div class="actions"><button class="button button-secondary" name="action" value="comment">Desar el comentari</button></div>
+                            </form>
+                        <?php else: ?>
+                            <div>
+                                <h2>Comentari</h2>
+                                <p class="record-comment"><?= h($record['COMENTARI']) ?></p>
+                            </div>
+                        <?php endif; ?>
+                        <form method="post" action="<?= $url ?>" class="actions">
                             <?php csrf(); ?>
-                            <label>Comentario <span class="muted">(opcional)</span><textarea name="comment"
-                                    rows="3"></textarea></label>
-                            <div class="actions"><button class="button button-secondary" name="action" value="comment">Guardar
-                                    comentario</button></div>
+                            <button class="button" name="action" value="finish">Completar el checklist</button>
                         </form>
-                    <?php else: ?>
-                        <div>
-                            <h2>Comentario</h2>
-                            <p class="record-comment"><?= h($record['COMENTARI']) ?></p>
-                        </div>
-                    <?php endif; ?>
-                    <form method="post" action="<?= $url ?>" class="actions">
-                        <?php csrf(); ?>
-                        <button class="button" name="action" value="finish">Completar checklist</button>
-                    </form>
-                </section>
-            <?php endif;
+                    </section>
+                <?php endif; ?>
+            </div>
+            <?php
             endLayout();
 }
 

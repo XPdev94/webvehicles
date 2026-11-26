@@ -219,14 +219,16 @@ try {
                     go($url, 'Incidencia guardada.');
                 }
                 if ($stage === 'checklist' && in_array($action, ['prepare-checklist', 'answer', 'expiry', 'clear-expiry', 'comment', 'finish'], true)) {
+                    $questionId = (int) field($_POST, 'question');
                     $missing = updateChecklist($db, $record, $action, [
-                        'question' => (int) field($_POST, 'question'),
+                        'question' => $questionId,
                         'answer' => field($_POST, 'answer'),
                         'expiry' => field($_POST, 'expiry'),
                         'comment' => field($_POST, 'comment'),
                     ]);
                     if (!$missing) {
-                        go($url, $action === 'finish' ? 'Checklist completado.' : null);
+                        $location = $questionId > 0 ? $url . '#question-' . $questionId : $url;
+                        go($location, $action === 'finish' ? 'Checklist completado.' : null);
                     }
                     $notice = ['text' => 'Completa los campos marcados para continuar.', 'tone' => 'error'];
                 }
